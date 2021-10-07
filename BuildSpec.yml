@@ -1,0 +1,80 @@
+service: my-website
+provider:
+  name: aws
+  region: us-east-1
+  variableSyntax: "\\${{([ ~:a-zA-Z0-9._@\\'\",\\-\\/\\(\\)]+?)}}"
+
+plugins:
+  - serverless-dotenv-plugin
+
+custom:
+  # 👇 Modify these
+  repository: https://github.com/USER/REPO
+  domainName: example.com
+  domainEnabled: true
+  # 👆 set to false if you just want to try this out without a custom domain
+  branch: master
+  amplifyStage: PRODUCTION
+  accessToken: ${{env:GITHUB_PERSONAL_ACCESS_TOKEN}}
+
+resources:
+  Conditions:
+    UseDomainName:
+      !Equals
+        - ${{self:custom.domainEnabled}}
+        - true
+  
+  Resources:
+    AmplifyApp:
+      Type: "AWS::Amplify::App"
+      Properties:
+        Name: ${{self:service}}
+        Repository: ${{self:custom.repository}}
+        AccessToken: 
+        # 👇 You'll likely need to modify BuildSpec also, especially `baseDirectory` which is commonly called dist or build
+        BuildSpec: |-
+          version: 0.1
+          frontend:
+            phases:
+              preBuild:
+                commands:
+                  - npm ci
+              build:
+                commands:
+                  - npm run build
+            artifacts:
+              baseDirectory: public
+              files:
+                - '**/*'
+            cache:
+              paths:
+                - node_modules/**/*
+
+    AmplifyBranch:
+      Type: AWS::Amplify::Branch
+      Properties:
+        AppId: !GetAtt AmplifyApp.AppId
+        BranchName: ${{self:custom.branch}}
+        EnableAutoBuild: true
+        Stage: ${{self:custom.amplifyStage}}
+
+    AmplifyDomain:
+      Type: AWS::Amplify::Domain
+      Condition: UseDomainName
+      Properties:
+        DomainName: ${{self:custom.domainName}}
+        AppId: !GetAtt AmplifyApp.AppId
+        SubDomainSettings:
+          - Prefix: ${{self:custom.branch}}
+            BranchName: !GetAtt AmplifyBranch.BranchName
+
+  Outputs:
+    AmplifyAppId:
+      Value: !Ref AmplifyApp
+
+    DefaultDomain:
+      Value: !Sub ${{self:custom.branch}}.${AmplifyApp.DefaultDomain}
+
+    BranchUrl:
+      Condition: UseDomainName
+      Value: !Sub ${AmplifyBranch.BranchName}.${AmplifyDomain.DomainName}

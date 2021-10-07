@@ -1,1 +1,1 @@
-# TenSmartWays2UseAWSCodeBuild
+# Continuous Deployment for websites with AWS Amplify and Serverless Framework
